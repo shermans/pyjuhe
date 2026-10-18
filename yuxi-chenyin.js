@@ -43,13 +43,18 @@ async function getMyMusic() {
 }
 
 // 个人收藏歌曲格式化（music.json 字段: name="歌手 - 歌名", url=直链, pic=封面）
+// 个人收藏歌曲的 id -> {url, lyricText} 映射（防止 App 丢弃下划线字段）
+const mySongMap = new Map();
+
 function formatMySong(_) {
   const name = _.name || "";
   const sep = name.indexOf(" - ");
   const artist = sep !== -1 ? name.slice(0, sep).trim() : "";
   const title = sep !== -1 ? name.slice(sep + 3).trim() : name;
+  const id = "my_" + (_.url || Math.random().toString(36).slice(2));
+  mySongMap.set(id, { url: _.url, lyricText: _.lyric_text || "" });
   return {
-    id: "my_" + _.url,
+    id: id,
     title: title,
     artist: artist,
     artwork: _.pic || undefined,
@@ -272,7 +277,11 @@ async function resolveUrl(apiBase, source, rid, level) {
 }
 
 async function getMediaSource(musicItem, quality) {
-  // 个人收藏：直链直接返回，不走解析接口
+  // 个人收藏：直链直接返回，不走解析接口（用 Map 查，防止 App 丢弃下划线字段）
+  const myInfo = mySongMap.get(musicItem.id);
+  if (myInfo && myInfo.url) {
+    return { url: myInfo.url };
+  }
   if (musicItem._directUrl) {
     return { url: musicItem._directUrl };
   }
@@ -303,7 +312,11 @@ async function getMediaSource(musicItem, quality) {
 }
 
 async function getLyric(musicItem) {
-  // 个人收藏：用内嵌歌词
+  // 个人收藏：用内嵌歌词（用 Map 查）
+  const myInfo = mySongMap.get(musicItem.id);
+  if (myInfo && myInfo.lyricText) {
+    return { rawLrc: myInfo.lyricText };
+  }
   if (musicItem._lyricText) {
     return { rawLrc: musicItem._lyricText };
   }
@@ -324,7 +337,7 @@ async function getLyric(musicItem) {
 
 module.exports = {
   platform: "怡红院 · 沉音",
-  version: "26.10.18-my2",
+  version: "26.10.18-my3",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "",
   cacheControl: "no-cache",
