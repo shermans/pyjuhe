@@ -122,7 +122,7 @@ async function getTopLists() {
     await (0, axios_1.default)({
       method: "get",
       url: "http://wapi.kuwo.cn/api/www/bang/bang/bangMenu",
-      timeout: 10000,
+      timeout: 30000,
     })
   ).data;
   if (res.code !== 200 || !res.data) return [];
@@ -145,7 +145,7 @@ async function getTopListDetail(topListItem, page) {
       method: "get",
       url: "http://wapi.kuwo.cn/api/www/bang/bang/musicList",
       params: { bangId: topListItem.id, pn: page, rn: pageSize },
-      timeout: 10000,
+      timeout: 30000,
     })
   ).data;
   if (res.code !== 200 || !res.data) return { isEnd: true, data: [] };
@@ -181,7 +181,7 @@ async function getRecommendSheetsByTag(tag, page) {
         rn: pageSize,
         order: order,
       },
-      timeout: 10000,
+      timeout: 30000,
     })
   ).data;
   if (res.code !== 200 || !res.data) return { isEnd: true, data: [] };
@@ -220,7 +220,7 @@ async function getMusicSheetInfo(sheet, page) {
         isnew: 1,
         vipver: 1,
       },
-      timeout: 10000,
+      timeout: 30000,
     })
   ).data;
   const list = res.musiclist || [];
@@ -290,7 +290,7 @@ async function getLyric(musicItem) {
 
 module.exports = {
   platform: "怡红院 · 沉音",
-  version: "26.10.18",
+  version: "26.10.18-fix",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "",
   cacheControl: "no-cache",
