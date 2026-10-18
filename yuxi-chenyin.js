@@ -262,6 +262,40 @@ async function getMusicSheetInfo(sheet, page) {
   };
 }
 
+// 导入酷我歌单链接：https://www.kuwo.cn/playlist_detail/123456
+async function importMusicSheet(url) {
+  const m = url.match(/playlist_detail\/(\d+)/);
+  if (!m) throw new Error("无法识别的歌单链接");
+  const pid = m[1];
+  // 拉取歌单基本信息（取第一页，顺带拿 title）
+  const res = (
+    await (0, axios_1.default)({
+      method: "get",
+      url: "http://nplserver.kuwo.cn/pl.svc",
+      params: {
+        op: "getlistinfo",
+        pid: pid,
+        pn: 0,
+        rn: 1,
+        encode: "utf8",
+        keyset: "pl2012",
+        identity: "kuwo",
+        pcmp4: 1,
+        isnew: 1,
+        vipver: 1,
+      },
+      timeout: 30000,
+    })
+  ).data;
+  return {
+    id: pid,
+    title: he.decode(res.title || "酷我歌单 " + pid),
+    coverImg: res.pic || undefined,
+    worksNum: +res.total || 0,
+    description: res.info || "",
+  };
+}
+
 async function resolveUrl(apiBase, source, rid, level) {
   const res = await (0, axios_1.default)({
     method: "post",
@@ -337,12 +371,12 @@ async function getLyric(musicItem) {
 
 module.exports = {
   platform: "怡红院 · 沉音",
-  version: "26.10.18-my3",
+  version: "26.10.18-my4",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "",
   cacheControl: "no-cache",
   hints: {
-    importMusicSheet: [],
+    importMusicSheet: ["kuwo.cn/playlist_detail/"],
   },
   supportedSearchType: ["music"],
   async search(query, page, type) {
@@ -355,6 +389,7 @@ module.exports = {
   getRecommendSheetTags,
   getRecommendSheetsByTag,
   getMusicSheetInfo,
+  importMusicSheet,
   getMediaSource,
   getLyric,
 };
