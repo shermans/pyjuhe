@@ -146,10 +146,10 @@ async function searchMusic(query, page) {
   };
 }
 
-// ============ 我的收藏 + 最新热榜 ============
+// ============ 我的收藏 ============
 async function getTopLists() {
   const groups = [];
-  // 我的收藏放最前面
+  // 只返回个人收藏，不含酷我榜单
   try {
     const my = await getMyMusic();
     const singers = my.singers || [];
@@ -165,28 +165,7 @@ async function getTopLists() {
       });
     }
   } catch (e) {
-    // 拉不到个人曲库就跳过，不影响榜单
-  }
-  const res = (
-    await (0, axios_1.default)({
-      method: "get",
-      url: "http://wapi.kuwo.cn/api/www/bang/bang/bangMenu",
-      timeout: 30000,
-    })
-  ).data;
-  if (res.code === 200 && res.data) {
-    for (const group of res.data) {
-      groups.push({
-        title: group.name,
-        data: (group.list || []).map((_) => ({
-          // 注意: musicList 详情接口要用 sourceid，不是 id
-          id: _.sourceid,
-          title: _.name,
-          coverImg: _.pic,
-          description: `${_.pub || ""} ${_.intro || ""}`.trim(),
-        })),
-      });
-    }
+    // 拉不到个人曲库就返回空
   }
   return groups;
 }
@@ -201,21 +180,7 @@ async function getTopListDetail(topListItem, page) {
     const songs = (group.songs || []).map(formatMySong);
     return { isEnd: true, data: songs };
   }
-  const res = (
-    await (0, axios_1.default)({
-      method: "get",
-      url: "http://wapi.kuwo.cn/api/www/bang/bang/musicList",
-      params: { bangId: topListItem.id, pn: page, rn: pageSize },
-      timeout: 30000,
-    })
-  ).data;
-  if (res.code !== 200 || !res.data) return { isEnd: true, data: [] };
-  const list = res.data.musicList || [];
-  const total = +res.data.num || 0;
-  return {
-    isEnd: page * pageSize >= total || list.length < pageSize,
-    data: list.map(formatBangItem),
-  };
+  return { isEnd: true, data: [] };
 }
 
 // ============ 精选歌单 ============
@@ -359,7 +324,7 @@ async function getLyric(musicItem) {
 
 module.exports = {
   platform: "怡红院 · 沉音",
-  version: "26.10.18-my",
+  version: "26.10.18-my2",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "",
   cacheControl: "no-cache",
