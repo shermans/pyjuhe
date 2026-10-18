@@ -29,6 +29,36 @@ const API_QUALITY_MAP = {
 
 const urlCache = new Map();
 
+// 个人收藏曲库（yingyue）
+const MY_MUSIC_JSON = "https://cdn.jsdelivr.net/gh/zxsla/yingyue@main/music.json";
+let myMusicCache = null;
+let myMusicCacheTime = 0;
+
+async function getMyMusic() {
+  if (myMusicCache && Date.now() - myMusicCacheTime < CACHE_TTL) return myMusicCache;
+  const res = await (0, axios_1.default)({ method: "get", url: MY_MUSIC_JSON, timeout: 30000 });
+  myMusicCache = res.data;
+  myMusicCacheTime = Date.now();
+  return myMusicCache;
+}
+
+// 个人收藏歌曲格式化（music.json 字段: name="歌手 - 歌名", url=直链, pic=封面）
+function formatMySong(_) {
+  const name = _.name || "";
+  const sep = name.indexOf(" - ");
+  const artist = sep !== -1 ? name.slice(0, sep).trim() : "";
+  const title = sep !== -1 ? name.slice(sep + 3).trim() : name;
+  return {
+    id: "my_" + _.url,
+    title: title,
+    artist: artist,
+    artwork: _.pic || undefined,
+    _directUrl: _.url,
+    _lyricText: _.lyric_text || "",
+    _source: "my",
+  };
+}
+
 function artworkShort2Long(albumpicShort) {
   var _a;
   const firstSlashOfAlbum =
@@ -116,8 +146,27 @@ async function searchMusic(query, page) {
   };
 }
 
-// ============ 最新热榜 ============
+// ============ 我的收藏 + 最新热榜 ============
 async function getTopLists() {
+  const groups = [];
+  // 我的收藏放最前面
+  try {
+    const my = await getMyMusic();
+    const singers = my.singers || [];
+    if (singers.length) {
+      groups.push({
+        title: "我的收藏",
+        data: singers.map((g, idx) => ({
+          id: "myfav_" + idx,
+          title: g.name,
+          coverImg: (g.songs[0] && g.songs[0].pic) || undefined,
+          description: `${g.songs.length} 首`,
+        })),
+      });
+    }
+  } catch (e) {
+    // 拉不到个人曲库就跳过，不影响榜单
+  }
   const res = (
     await (0, axios_1.default)({
       method: "get",
@@ -125,21 +174,33 @@ async function getTopLists() {
       timeout: 30000,
     })
   ).data;
-  if (res.code !== 200 || !res.data) return [];
-  // data 为分组数组: [{name:"官方", list:[{id,name,pic,intro,pub}]}]
-  return res.data.map((group) => ({
-    title: group.name,
-    data: (group.list || []).map((_) => ({
-      // 注意: musicList 详情接口要用 sourceid，不是 id
-      id: _.sourceid,
-      title: _.name,
-      coverImg: _.pic,
-      description: `${_.pub || ""} ${_.intro || ""}`.trim(),
-    })),
-  }));
+  if (res.code === 200 && res.data) {
+    for (const group of res.data) {
+      groups.push({
+        title: group.name,
+        data: (group.list || []).map((_) => ({
+          // 注意: musicList 详情接口要用 sourceid，不是 id
+          id: _.sourceid,
+          title: _.name,
+          coverImg: _.pic,
+          description: `${_.pub || ""} ${_.intro || ""}`.trim(),
+        })),
+      });
+    }
+  }
+  return groups;
 }
 
 async function getTopListDetail(topListItem, page) {
+  // 我的收藏：从 music.json 取对应分组
+  if (String(topListItem.id).startsWith("myfav_")) {
+    const idx = parseInt(String(topListItem.id).replace("myfav_", ""), 10);
+    const my = await getMyMusic();
+    const group = (my.singers || [])[idx];
+    if (!group) return { isEnd: true, data: [] };
+    const songs = (group.songs || []).map(formatMySong);
+    return { isEnd: true, data: songs };
+  }
   const res = (
     await (0, axios_1.default)({
       method: "get",
@@ -246,6 +307,10 @@ async function resolveUrl(apiBase, source, rid, level) {
 }
 
 async function getMediaSource(musicItem, quality) {
+  // 个人收藏：直链直接返回，不走解析接口
+  if (musicItem._directUrl) {
+    return { url: musicItem._directUrl };
+  }
   const userQuality = QUALITY_MAP[quality] || "320k";
   const apiLevel = API_QUALITY_MAP[userQuality] || "320k";
   const rid = musicItem.id;
@@ -273,6 +338,10 @@ async function getMediaSource(musicItem, quality) {
 }
 
 async function getLyric(musicItem) {
+  // 个人收藏：用内嵌歌词
+  if (musicItem._lyricText) {
+    return { rawLrc: musicItem._lyricText };
+  }
   const res = (
     await (0, axios_1.default)({
       method: "get",
@@ -290,7 +359,7 @@ async function getLyric(musicItem) {
 
 module.exports = {
   platform: "怡红院 · 沉音",
-  version: "26.10.18-fix",
+  version: "26.10.18-my",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "",
   cacheControl: "no-cache",
