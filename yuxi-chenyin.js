@@ -7,6 +7,7 @@ const pageSize = 30;
 // ============ 怡红院 · 沉音 ============
 // 由 lx-music 音源脚本移植，解析接口来自原脚本
 // API: https://musicserver.haitangw.cc/v1/ (主) / https://qt.haitangw.net/v1/ (备)
+// 搜索/榜单/歌单数据来自酷我公开接口
 
 const API1 = "https://musicserver.haitangw.cc/v1/";
 const API2 = "https://qt.haitangw.net/v1/";
@@ -58,6 +59,33 @@ function formatMusicItem(_) {
   };
 }
 
+// 榜单歌曲格式化（bang/musicList 接口字段）
+function formatBangItem(_) {
+  const rid = (_.musicrid || "").replace("MUSIC_", "") || String(_.rid || "");
+  return {
+    id: rid,
+    artwork: _.pic || undefined,
+    title: he.decode(_.name || ""),
+    artist: he.decode(_.artist || ""),
+    album: he.decode(_.album || ""),
+    albumId: _.albumid,
+    _source: "kw",
+  };
+}
+
+// 歌单歌曲格式化（pl.svc 接口字段）
+function formatSheetSong(_) {
+  return {
+    id: String(_.id || ""),
+    title: he.decode(_.name || ""),
+    artist: he.decode(_.artist || ""),
+    album: he.decode(_.album || ""),
+    albumId: _.albumid,
+    artistId: _.artistid,
+    _source: "kw",
+  };
+}
+
 async function searchMusic(query, page) {
   const res = (
     await (0, axios_1.default)({
@@ -85,6 +113,121 @@ async function searchMusic(query, page) {
   return {
     isEnd: (+res.PN + 1) * +res.RN >= +res.TOTAL,
     data: songs,
+  };
+}
+
+// ============ 最新热榜 ============
+async function getTopLists() {
+  const res = (
+    await (0, axios_1.default)({
+      method: "get",
+      url: "http://wapi.kuwo.cn/api/www/bang/bang/bangMenu",
+      timeout: 10000,
+    })
+  ).data;
+  if (res.code !== 200 || !res.data) return [];
+  // data 为分组数组: [{name:"官方", list:[{id,name,pic,intro,pub}]}]
+  return res.data.map((group) => ({
+    title: group.name,
+    data: (group.list || []).map((_) => ({
+      // 注意: musicList 详情接口要用 sourceid，不是 id
+      id: _.sourceid,
+      title: _.name,
+      coverImg: _.pic,
+      description: `${_.pub || ""} ${_.intro || ""}`.trim(),
+    })),
+  }));
+}
+
+async function getTopListDetail(topListItem, page) {
+  const res = (
+    await (0, axios_1.default)({
+      method: "get",
+      url: "http://wapi.kuwo.cn/api/www/bang/bang/musicList",
+      params: { bangId: topListItem.id, pn: page, rn: pageSize },
+      timeout: 10000,
+    })
+  ).data;
+  if (res.code !== 200 || !res.data) return { isEnd: true, data: [] };
+  const list = res.data.musicList || [];
+  const total = +res.data.num || 0;
+  return {
+    isEnd: page * pageSize >= total || list.length < pageSize,
+    data: list.map(formatBangItem),
+  };
+}
+
+// ============ 精选歌单 ============
+const SHEET_TAGS = [
+  { id: "hot", title: "最热" },
+  { id: "new", title: "最新" },
+];
+
+async function getRecommendSheetTags() {
+  return { data: SHEET_TAGS };
+}
+
+async function getRecommendSheetsByTag(tag, page) {
+  const order = tag.id === "new" ? "new" : "hot";
+  const res = (
+    await (0, axios_1.default)({
+      method: "get",
+      url: "http://wapi.kuwo.cn/api/pc/classify/playlist/getRcmPlayList",
+      params: {
+        loginUid: 0,
+        loginSid: 0,
+        appUid: 76039576,
+        pn: page,
+        rn: pageSize,
+        order: order,
+      },
+      timeout: 10000,
+    })
+  ).data;
+  if (res.code !== 200 || !res.data) return { isEnd: true, data: [] };
+  const list = res.data.data || [];
+  const total = +res.data.total || 0;
+  return {
+    isEnd: page * pageSize >= total || list.length < pageSize,
+    data: list.map((_) => ({
+      id: _.id,
+      title: he.decode(_.name || ""),
+      coverImg: _.img,
+      artist: _.uname || "",
+      playCount: +_.listencnt || 0,
+      worksNum: +_.total || 0,
+      description: _.info || _.digest || "",
+    })),
+  };
+}
+
+async function getMusicSheetInfo(sheet, page) {
+  const rn = pageSize;
+  const pn = (page - 1) * rn;
+  const res = (
+    await (0, axios_1.default)({
+      method: "get",
+      url: "http://nplserver.kuwo.cn/pl.svc",
+      params: {
+        op: "getlistinfo",
+        pid: sheet.id,
+        pn: pn,
+        rn: rn,
+        encode: "utf8",
+        keyset: "pl2012",
+        identity: "kuwo",
+        pcmp4: 1,
+        isnew: 1,
+        vipver: 1,
+      },
+      timeout: 10000,
+    })
+  ).data;
+  const list = res.musiclist || [];
+  const total = +res.total || 0;
+  return {
+    isEnd: pn + rn >= total || list.length < rn,
+    musicList: list.map(formatSheetSong),
   };
 }
 
@@ -147,7 +290,7 @@ async function getLyric(musicItem) {
 
 module.exports = {
   platform: "怡红院 · 沉音",
-  version: "26.10.11",
+  version: "26.10.18",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "",
   cacheControl: "no-cache",
@@ -158,6 +301,13 @@ module.exports = {
   async search(query, page, type) {
     if (type === "music") return await searchMusic(query, page);
   },
+  // 最新热榜
+  getTopLists,
+  getTopListDetail,
+  // 精选歌单
+  getRecommendSheetTags,
+  getRecommendSheetsByTag,
+  getMusicSheetInfo,
   getMediaSource,
   getLyric,
 };
